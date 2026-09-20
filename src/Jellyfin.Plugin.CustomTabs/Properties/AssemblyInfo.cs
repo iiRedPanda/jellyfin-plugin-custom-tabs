@@ -6,4 +6,4 @@ using Jellyfin.Plugin.CustomTabs.Attributes;
 [assembly: AssemblyDescription("")]
 [assembly: AssemblyTitle("Jellyfin.Plugins.CustomTabs")]
 [assembly: AssemblyVersion("0.2.0.0")]
-[assembly: JellyfinVersion("10.11.2")]
+[assembly: JellyfinVersion("12.1.0")]

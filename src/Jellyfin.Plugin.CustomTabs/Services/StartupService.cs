@@ -1,10 +1,6 @@
 ﻿using System.Reflection;
 using System.Runtime.Loader;
 using Jellyfin.Plugin.CustomTabs.Helpers;
-using Jellyfin.Plugin.CustomTabs.JellyfinVersionSpecific;
-using MediaBrowser.Controller;
-using MediaBrowser.Controller.Library;
-using MediaBrowser.Controller.Playlists;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
@@ -30,7 +26,7 @@ namespace Jellyfin.Plugin.CustomTabs.Services
 
         public Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
         {
-            m_logger.LogInformation($"CustomTabs Startup. Registering file transformations.");
+            m_logger.LogInformation("Custom Tabs: registering the index-page transformation.");
             
             List<JObject> payloads = new List<JObject>();
 
@@ -44,17 +40,6 @@ namespace Jellyfin.Plugin.CustomTabs.Services
                 
                 payloads.Add(payload);
             }
-            {
-                JObject payload = new JObject();
-                payload.Add("id", "403e6374-7433-4137-b24f-2be01a14a90f");
-                payload.Add("fileNamePattern", "home-html\\..*\\.chunk\\.js");
-                payload.Add("callbackAssembly", GetType().Assembly.FullName);
-                payload.Add("callbackClass", typeof(TransformationPatches).FullName);
-                payload.Add("callbackMethod", nameof(TransformationPatches.HomeHtmlChunk));
-                
-                payloads.Add(payload);
-            }
-
             Assembly? fileTransformationAssembly =
                 AssemblyLoadContext.All.SelectMany(x => x.Assemblies).FirstOrDefault(x =>
                     x.FullName?.Contains(".FileTransformation") ?? false);
@@ -72,9 +57,17 @@ namespace Jellyfin.Plugin.CustomTabs.Services
                 }
             }
 
+            else
+            {
+                m_logger.LogWarning("Custom Tabs requires the File Transformation plugin to inject its client script.");
+            }
+
             return Task.CompletedTask;
         }
 
-        public IEnumerable<TaskTriggerInfo> GetDefaultTriggers() => StartupServiceHelper.GetDefaultTriggers();
+        public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
+        {
+            yield return new TaskTriggerInfo { Type = TaskTriggerInfoType.StartupTrigger };
+        }
     }
 }

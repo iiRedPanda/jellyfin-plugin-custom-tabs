@@ -1,162 +1,131 @@
-﻿// Scope everything in a check to avoid re-declaring the plugin
-if (typeof window.customTabsPlugin == 'undefined') {
+/* Custom Tabs for Jellyfin 12.1.
+ *
+ * KefinTweaks uses this plugin to host its Watchlist as a normal home-page
+ * tab. Keep this deliberately small: it works with the existing header-tabs
+ * component and never replaces Jellyfin navigation.
+ */
+(() => {
+    'use strict';
 
-    // Define the plugin on the window object for universal access
-    window.customTabsPlugin = {
-        initialized: false,
-        currentPage: null,
-
-        // Kicks off the process
-        init: function() {
-            console.log('CustomTabs: Initializing plugin');
-            this.waitForUI();
-        },
-
-        // Waits for the necessary page elements to be ready before acting
-        waitForUI: function() {
-            // Check if we are on the home page by looking at the URL hash
-            const hash = window.location.hash;
-            if (hash !== '' && hash !== '#/home' && hash !== '#/home.html' && !hash.includes('#/home?') && !hash.includes('#/home.html?')) {
-                console.debug('CustomTabs: Not on main page, skipping UI check. Hash:', hash);
-                return;
-            }
-
-            // If the UI is ready, create tabs; otherwise, wait and check again
-            if (typeof ApiClient !== 'undefined' && document.querySelector('.emby-tabs-slider')) {
-                console.debug('CustomTabs: UI elements available on main page, creating tabs');
-                this.createCustomTabs();
-            } else {
-                console.debug('CustomTabs: Waiting for UI elements on main page...');
-                setTimeout(() => this.waitForUI(), 200);
-            }
-        },
-
-        // Fetches config and creates the tab elements in the DOM
-        createCustomTabs: function() {
-            console.debug('CustomTabs: Starting tab creation process');
-
-            const tabsSlider = document.querySelector('.emby-tabs-slider');
-            if (!tabsSlider) {
-                console.debug('CustomTabs: Tabs slider not found');
-                return;
-            }
-
-            // Prevent creating duplicate tabs if they already exist
-            if (tabsSlider.querySelector('[id^="customTabButton_"]')) {
-                console.debug('CustomTabs: Custom tabs already exist in DOM, skipping creation');
-                return;
-            }
-
-            // Fetch tab configuration from the server
-            ApiClient.fetch({
-                url: ApiClient.getUrl('CustomTabs/Config'),
-                type: 'GET',
-                dataType: 'json',
-                headers: {
-                    accept: 'application/json'
-                }
-            }).then((configs) => {
-                console.debug('CustomTabs: Retrieved config for', configs.length, 'tabs');
-
-                const tabsSlider = document.querySelector('.emby-tabs-slider');
-                if (!tabsSlider) {
-                    console.error('CustomTabs: Tabs slider disappeared unexpectedly');
-                    return;
-                }
-
-                // Loop through configs and create a tab for each one
-                configs.forEach((config, i) => {
-                    const customTabId = `customTabButton_${i}`;
-
-                    // Final check to ensure this specific tab doesn't already exist
-                    if (document.querySelector(`#${customTabId}`)) {
-                        console.debug(`CustomTabs: Tab ${customTabId} already exists, skipping`);
-                        return; // 'return' here acts like 'continue' in a forEach loop
-                    }
-
-                    console.log("CustomTabs: Creating custom tab:", config.Title);
-
-                    const title = document.createElement("div");
-                    title.classList.add("emby-button-foreground");
-                    title.innerText = config.Title;
-
-                    const button = document.createElement("button");
-                    button.type = "button";
-                    button.setAttribute("is", "empty-button");
-                    button.classList.add("emby-tab-button", "emby-button");
-                    button.setAttribute("data-index", i + 2);
-                    button.setAttribute("id", customTabId);
-                    button.appendChild(title);
-
-                    tabsSlider.appendChild(button);
-                    console.log(`CustomTabs: Added tab ${customTabId} to tabs slider`);
-                });
-
-                console.log('CustomTabs: All custom tabs created successfully');
-            }).catch((error) => {
-                console.error('CustomTabs: Error fetching tab configs:', error);
-            });
-        }
-    };
-
-    // --- Event Listeners to Handle Navigation ---
-
-    // Initial setup when the page is first loaded
-    if (document.readyState === 'loading') {
-        document.addEventListener("DOMContentLoaded", () => window.customTabsPlugin.init());
-    } else {
-        window.customTabsPlugin.init();
+    if (window.customTabsPlugin) {
+        return;
     }
 
-    // A single handler for all navigation-style events
-    const handleNavigation = () => {
-        console.debug('CustomTabs: Navigation detected, re-initializing after delay');
-        // Delay helps ensure the DOM has settled after navigation
-        setTimeout(() => {
-            window.customTabsPlugin.init();
-        }, 800);
+    const LOG = (...args) => console.debug('[Custom Tabs]', ...args);
+    const isHomeRoute = () => /^#\/home(?:\.html)?(?:\?|$)/.test(window.location.hash || '#/home');
+    const authHeaders = () => {
+        const token = window.ApiClient?.accessToken?.();
+        const header = window.apiHelper?.getAuthHeader?.();
+        if (header) {
+            return { Authorization: header, Accept: 'application/json' };
+        }
+        return token ? { 'X-Emby-Token': token, Accept: 'application/json' } : { Accept: 'application/json' };
     };
 
-    // Standard browser navigation (back/forward buttons)
-    window.addEventListener("popstate", handleNavigation);
+    let scheduled = false;
+    let requestInFlight = false;
 
-    // Mobile-specific events that can signify a page change
-    window.addEventListener("pageshow", handleNavigation);
-    window.addEventListener("focus", handleNavigation);
+    async function getTabs() {
+        const server = window.ApiClient?._serverAddress || window.ApiClient?.serverAddress?.();
+        if (!server) {
+            return [];
+        }
 
-    // Monkey-patch history API to detect navigation
-    const originalPushState = history.pushState;
-    history.pushState = function() {
-        originalPushState.apply(history, arguments);
-        handleNavigation();
-    };
+        const response = await fetch(`${server}/CustomTabs/Config`, { headers: authHeaders() });
+        if (!response.ok) {
+            throw new Error(`Config request failed (${response.status})`);
+        }
 
-    const originalReplaceState = history.replaceState;
-    history.replaceState = function() {
-        originalReplaceState.apply(history, arguments);
-        handleNavigation();
-    };
+        const tabs = await response.json();
+        return Array.isArray(tabs) ? tabs : [];
+    }
 
-    // Handle tab visibility changes (e.g., user switches to another tab and back)
-    document.addEventListener("visibilitychange", () => {
+    function getActiveLibraryPage() {
+        return document.querySelector('.libraryPage:not(.hide)') || document.querySelector('.libraryPage');
+    }
+
+    function createContent(tab, index, libraryPage) {
+        const contentId = `customTab_${index}`;
+        let content = libraryPage.querySelector(`#${CSS.escape(contentId)}`);
+        if (content) {
+            return;
+        }
+
+        content = document.createElement('div');
+        content.id = contentId;
+        content.className = 'tabContent pageTabContent';
+        content.dataset.index = String(index + 2);
+        // This is administrator-configured HTML. KefinTweaks uses the fixed,
+        // local value <div class="sections watchlist"></div> for its Watchlist.
+        content.innerHTML = tab.ContentHtml || '';
+        libraryPage.appendChild(content);
+    }
+
+    function createButton(tab, index) {
+        const slider = document.querySelector('.headerTabs .emby-tabs-slider');
+        if (!slider || slider.querySelector(`#customTabButton_${index}`)) {
+            return;
+        }
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.id = `customTabButton_${index}`;
+        button.className = 'emby-tab-button emby-button';
+        button.dataset.index = String(index + 2);
+        button.setAttribute('is', 'empty-button');
+
+        const label = document.createElement('div');
+        label.className = 'emby-button-foreground';
+        label.textContent = tab.Title || `Tab ${index + 1}`;
+        button.appendChild(label);
+        slider.appendChild(button);
+    }
+
+    async function ensureTabs() {
+        if (!isHomeRoute() || requestInFlight || !window.ApiClient) {
+            return;
+        }
+
+        const libraryPage = getActiveLibraryPage();
+        if (!libraryPage) {
+            return;
+        }
+
+        requestInFlight = true;
+        try {
+            const tabs = await getTabs();
+            tabs.forEach((tab, index) => {
+                createContent(tab, index, libraryPage);
+                createButton(tab, index);
+            });
+            LOG(`ensured ${tabs.length} custom tab(s)`);
+        } catch (error) {
+            console.warn('[Custom Tabs] Could not load tabs:', error);
+        } finally {
+            requestInFlight = false;
+        }
+    }
+
+    function scheduleEnsure() {
+        if (scheduled) {
+            return;
+        }
+        scheduled = true;
+        window.setTimeout(() => {
+            scheduled = false;
+            void ensureTabs();
+        }, 150);
+    }
+
+    window.customTabsPlugin = { ensureTabs, scheduleEnsure };
+    window.addEventListener('hashchange', scheduleEnsure);
+    window.addEventListener('pageshow', scheduleEnsure);
+    document.addEventListener('visibilitychange', () => {
         if (!document.hidden) {
-            console.debug('CustomTabs: Page became visible, checking for tabs');
-            setTimeout(() => window.customTabsPlugin.init(), 300);
+            scheduleEnsure();
         }
     });
 
-    // Handle touch events which can also trigger navigation on mobile
-    let touchNavigation = false;
-    document.addEventListener("touchstart", () => {
-        touchNavigation = true;
-    });
-
-    document.addEventListener("touchend", () => {
-        if (touchNavigation) {
-            setTimeout(() => window.customTabsPlugin.init(), 1000);
-            touchNavigation = false;
-        }
-    });
-
-    console.log('CustomTabs: Plugin setup complete');
-}
+    new MutationObserver(scheduleEnsure).observe(document.documentElement, { childList: true, subtree: true });
+    scheduleEnsure();
+})();

@@ -1,6 +1,4 @@
 ﻿using System.Reflection;
-using System.Text.RegularExpressions;
-using Jellyfin.Plugin.CustomTabs.Configuration;
 using Jellyfin.Plugin.CustomTabs.Model;
 
 namespace Jellyfin.Plugin.CustomTabs.Helpers
@@ -9,54 +7,16 @@ namespace Jellyfin.Plugin.CustomTabs.Helpers
     {
         public static string IndexHtml(PatchRequestPayload payload)
         {
-            Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"{typeof(CustomTabsPlugin).Namespace}.Inject.addCustomTabs.js")!;
-            using TextReader reader = new StreamReader(stream);
-            
-            string regex = Regex.Replace(payload.Contents!, "(</body>)", $"<script defer>{reader.ReadToEnd()}</script>$1");
-            
-            return regex;
-        }
-
-        public static string HomeHtmlChunk(PatchRequestPayload payload)
-        {
-            string buffer = payload.Contents!;
+            const string ScriptId = "custom-tabs-jf12";
+            string contents = payload.Contents ?? string.Empty;
+            if (contents.Contains($"id=\"{ScriptId}\"", StringComparison.Ordinal))
             {
-                Stream stream = Assembly.GetExecutingAssembly()
-                    .GetManifestResourceStream($"{typeof(CustomTabsPlugin).Namespace}.Inject.tabTemplate.html")!;
-                using TextReader reader = new StreamReader(stream);
-
-                string tabTemplate = reader.ReadToEnd();
-                string finalReplacement = "";
-                for (int i = 0; i < CustomTabsPlugin.Instance.Configuration.Tabs.Length; ++i)
-                {
-                    TabConfig tabConfig = CustomTabsPlugin.Instance.Configuration.Tabs[i];
-
-                    finalReplacement += tabTemplate
-                        .Replace("{{tab_id}}", $"customTab_{i}")
-                        .Replace("{{tab_index}}", $"{i + 2}")
-                        .Replace("{{tab_content}}", tabConfig.ContentHtml);
-                }
-
-                finalReplacement = finalReplacement
-                    .Replace('\r', ' ')
-                    .Replace('\n', ' ')
-                    .Replace("  ", " ")
-                    .Replace("'undefined'", "\\'undefined\\'");
-                
-                buffer = Regex.Replace(buffer, "(id=\"favoritesTab\" data-index=\"1\"> <div class=\"sections\"></div> </div>)", $"$1{finalReplacement}");
+                return contents;
             }
 
-            return buffer;
-        }
-
-        public static string MainBundle(PatchRequestPayload payload)
-        {
-            string replacementText =
-                "window.PlaybackManager=this.playbackManager;console.log(\"PlaybackManager is now globally available:\",window.PlaybackManager);";
-            
-            string regex = Regex.Replace(payload.Contents!, @"(this\.playbackManager=e,)", $"$1{replacementText}");
-
-            return regex;
+            Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"{typeof(CustomTabsPlugin).Namespace}.Inject.addCustomTabs.js")!;
+            using TextReader reader = new StreamReader(stream);
+            return contents.Replace("</body>", $"<script id=\"{ScriptId}\" defer>{reader.ReadToEnd()}</script></body>", StringComparison.OrdinalIgnoreCase);
         }
     }
 }
