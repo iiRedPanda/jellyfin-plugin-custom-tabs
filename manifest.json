@@ -1,0 +1,21 @@
+[
+  {
+    "guid": "fbacd0b6-fd46-4a05-b0a4-2045d6a135b0",
+    "name": "Custom Tabs",
+    "overview": "Custom home-page tabs for KefinTweaks Watchlist.",
+    "description": "Jellyfin 12.1 build of Custom Tabs. Provides the native tab host and configuration API required for KefinTweaks Watchlist.",
+    "owner": "iiRedPanda",
+    "category": "General",
+    "imageUrl": "https://raw.githubusercontent.com/iiRedPanda/jellyfin-plugin-custom-tabs/21292380bd596261aa3a2451f4dcb7f380d66092/src/logo.png",
+    "versions": [
+      {
+        "version": "12.1.0.0",
+        "changelog": "Jellyfin 12.1 port for KefinTweaks Watchlist support.",
+        "targetAbi": "12.1.0.0",
+        "sourceUrl": "https://raw.githubusercontent.com/iiRedPanda/jellyfin-plugin-custom-tabs/21292380bd596261aa3a2451f4dcb7f380d66092/release/Custom-Tabs_12.1.0.0-install.zip",
+        "checksum": "EF2596A746E7130651B637D6FB68B9C8",
+        "timestamp": "2026-09-20T06:00:00"
+      }
+    ]
+  }
+]
